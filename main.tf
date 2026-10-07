@@ -5,6 +5,9 @@ locals {
   control_plane_ip = local.node_private_ips[0]
   argocd_hostname  = "argocd.${azurerm_public_ip.k3s_lb_ip.ip_address}.sslip.io"
   app_hostname     = "app.${azurerm_public_ip.k3s_lb_ip.ip_address}.sslip.io"
+  mongodb_hostname = "mongodb.${azurerm_public_ip.k3s_lb_ip.ip_address}.sslip.io"
+  # Must match externalAccess.service.nodePorts in sample-nodejs mongodb values.
+  mongodb_node_ports = [30017, 30018, 30019]
 }
 
 resource "random_password" "k3s_token" {
@@ -121,6 +124,26 @@ resource "azurerm_lb_rule" "argocd_https" {
   probe_id                       = azurerm_lb_probe.argocd_https.id
 }
 
+resource "azurerm_lb_probe" "mongodb" {
+  for_each        = toset([for port in local.mongodb_node_ports : tostring(port)])
+  loadbalancer_id = azurerm_lb.k3s_api_lb.id
+  name            = "mongodb-${each.key}"
+  protocol        = "Tcp"
+  port            = tonumber(each.key)
+}
+
+resource "azurerm_lb_rule" "mongodb" {
+  for_each                       = toset([for port in local.mongodb_node_ports : tostring(port)])
+  loadbalancer_id                = azurerm_lb.k3s_api_lb.id
+  name                           = "mongodb-${each.key}"
+  protocol                       = "Tcp"
+  frontend_port                  = tonumber(each.key)
+  backend_port                   = tonumber(each.key)
+  frontend_ip_configuration_name = "k3s-api-frontend"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.k3s_api.id]
+  probe_id                       = azurerm_lb_probe.mongodb[each.key].id
+}
+
 resource "azurerm_network_interface" "nics" {
   count               = var.count_qty
   name                = "nic-${count.index}"
@@ -147,6 +170,7 @@ resource "azurerm_network_interface_backend_address_pool_association" "k3s_api" 
   depends_on = [
     azurerm_lb_rule.k3s_lb_router,
     azurerm_lb_rule.argocd_https,
+    azurerm_lb_rule.mongodb,
   ]
 }
 
@@ -326,6 +350,17 @@ resource "null_resource" "bootstrap_master_app" {
   }
 }
 
+resource "null_resource" "set_mongodb_domain" {
+  depends_on = [null_resource.bootstrap_master_app]
+  triggers = {
+    bootstrap_id = null_resource.bootstrap_master_app.id
+    hostname     = local.mongodb_hostname
+  }
+  provisioner "local-exec" {
+    command = "bash ${path.module}/scripts/set_mongodb_domain.sh ${path.module}/k3s.yaml ${local.mongodb_hostname}"
+  }
+}
+
 resource "null_resource" "install_sealed_secrets" {
   depends_on = [null_resource.get_kubeconfig]
   triggers = {
@@ -355,20 +390,28 @@ output "kubeconfig_instructions" {
 
 output "argocd_access" {
   description = "How to reach the Argo CD UI and read the initial admin password"
-  value       = <<-EOT
-https://${local.argocd_hostname}
-The browser will warn on Traefik's default certificate.
-User: admin
-Password: kubectl -n default get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
-Fallback: export KUBECONFIG=./k3s.yaml && kubectl -n default port-forward svc/argocd-server 8080:443
-EOT
+  value = [
+    "https://${local.argocd_hostname}",
+    "The browser will warn on Traefik's default certificate.",
+    "User: admin",
+    "Password: kubectl -n default get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo",
+    "Fallback: export KUBECONFIG=./k3s.yaml && kubectl -n default port-forward svc/argocd-server 8080:443",
+  ]
+}
+
+output "mongodb_access" {
+  description = "Replica set connection endpoints. Terraform stores the hostname in the mongodb-external-access ConfigMap. The app's PostSync hook copies it onto the Application after Argo creates it."
+  value = [
+    "mongodb://appuser:<password>@${join(",", [for port in local.mongodb_node_ports : "${local.mongodb_hostname}:${port}"])}/?replicaSet=rs0",
+    "Password: MONGODB_PASSWORD in mongodb-credentials.env",
+  ]
 }
 
 output "app_access" {
   description = "How to reach the Node.js app (hostless Ingress; sslip.io name is for DNS only)"
-  value       = <<-EOT
-https://${local.app_hostname}
-The browser will warn on Traefik's default certificate.
-Argo CD stays on https://${local.argocd_hostname} (Host rule). The app Ingress has no Host, so any other name on this LB reaches the app.
-EOT
+  value = [
+    "https://${local.app_hostname}",
+    "The browser will warn on Traefik's default certificate.",
+    "Argo CD stays on https://${local.argocd_hostname} (Host rule). The app Ingress has no Host, so any other name on this LB reaches the app.",
+  ]
 }
