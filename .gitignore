@@ -3,5 +3,7 @@
 *.tfstate.backup
 *.old
 k3s.yaml
+# sealed-secrets-key.yaml
+# mongodb-credentials.env
 crash.log
 crash.*.log

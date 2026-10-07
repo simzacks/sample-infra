@@ -4,9 +4,16 @@ set -euo pipefail
 KUBECONFIG_PATH=$1
 EXPECTED_NODES=$2
 CHART_VERSION=$3
-HOSTNAME=$4
+KEY_FILE=$4
 
 export KUBECONFIG="$KUBECONFIG_PATH"
+
+if [[ ! -f "$KEY_FILE" ]]; then
+  echo "Missing Sealed Secrets private key: ${KEY_FILE}" >&2
+  echo "Copy sealed-secrets-key.yaml onto this machine (same file used to seal MongoDB credentials)," >&2
+  echo "or generate one with scripts/generate_sealed_secrets_key.sh and re-seal secrets with the new cert." >&2
+  exit 1
+fi
 
 TIMEOUT_SECONDS=600
 START=$(date +%s)
@@ -25,26 +32,20 @@ until [[ "$(ready_count)" -ge "$EXPECTED_NODES" ]]; do
   sleep 5
 done
 
+kubectl apply -f "$KEY_FILE"
+
 VALUES_FILE=$(mktemp)
 trap 'rm -f "$VALUES_FILE"' EXIT
 
 cat > "$VALUES_FILE" <<EOF
-configs:
-  params:
-    server.insecure: "true"
-server:
-  ingress:
-    enabled: true
-    ingressClassName: traefik
-    hostname: ${HOSTNAME}
-    annotations:
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      traefik.ingress.kubernetes.io/router.tls: "true"
+fullnameOverride: sealed-secrets-controller
+secretName: sealed-secrets-key
+keyrenewperiod: "0"
 EOF
 
-helm repo add argo https://argoproj.github.io/argo-helm --force-update
-helm repo update argo
-helm upgrade --install argocd argo/argo-cd \
+helm repo add sealed-secrets https://bitnami.github.io/sealed-secrets --force-update
+helm repo update sealed-secrets
+helm upgrade --install sealed-secrets sealed-secrets/sealed-secrets \
   --namespace default \
   --version "$CHART_VERSION" \
   --values "$VALUES_FILE" \
