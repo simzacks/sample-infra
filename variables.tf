@@ -22,12 +22,6 @@ variable "argocd_chart_version" {
   default     = "10.9.6"
 }
 
-variable "sealed_secrets_chart_version" {
-  type        = string
-  description = "Pinned sealed-secrets Helm chart version"
-  default     = "2.20.0"
-}
-
 variable "master_app_manifest_url" {
   type        = string
   description = "Raw URL of the Argo CD master Application manifest in the GitOps repo. Fetched at apply time; child apps live in the git path that manifest watches."

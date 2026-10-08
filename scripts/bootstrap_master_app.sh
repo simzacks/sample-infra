@@ -10,7 +10,5 @@ export KUBECONFIG="$KUBECONFIG_PATH"
 # is ready to accept a sync. The CRD must exist before apply.
 kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=180s
 
-MANIFEST=$(mktemp)
-trap 'rm -f "$MANIFEST"' EXIT
-curl -fsSL "$MANIFEST_URL" -o "$MANIFEST"
-kubectl apply -f "$MANIFEST"
+# curl gives a clearer error message if the download fails rather than directly calling kubectl apply -f $MANIFEST_URL
+curl -fsSL "$MANIFEST_URL" | kubectl apply -f -

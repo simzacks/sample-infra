@@ -5,11 +5,12 @@ SSH_USER=$1
 SSH_IP=$2
 MY_PATH=$3
 LB_IP=$4
+PRIVATE_KEY=$5
 
 # Loop until the control plane completes setting up the file
 TIMEOUT_SECONDS=600
 START=$(date +%s)
-SSH=(ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$SSH_USER@$SSH_IP")
+SSH=(ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 -i $PRIVATE_KEY "$SSH_USER@$SSH_IP")
 
 until "${SSH[@]}" "sudo test -f /etc/rancher/k3s/k3s.yaml" 2>/dev/null; do
   now=$(date +%s)

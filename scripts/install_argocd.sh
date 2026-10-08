@@ -38,8 +38,8 @@ server:
     ingressClassName: traefik
     hostname: ${HOSTNAME}
     annotations:
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+      traefik.ingress.kubernetes.io/router.tls: "false"
 EOF
 
 helm repo add argo https://argoproj.github.io/argo-helm --force-update
