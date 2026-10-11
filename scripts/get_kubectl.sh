@@ -23,6 +23,6 @@ until "${SSH[@]}" "sudo test -f /etc/rancher/k3s/k3s.yaml" 2>/dev/null; do
 done
 
 # Fetch kubeconfig over SSH, then point the API server at the load balancer
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $SSH_USER@$SSH_IP "sudo cat /etc/rancher/k3s/k3s.yaml" > $MY_PATH/k3s.yaml
+ssh -o StrictHostKeyChecking=no -i $PRIVATE_KEY $SSH_USER@$SSH_IP "sudo cat /etc/rancher/k3s/k3s.yaml" > $MY_PATH/k3s.yaml
 
 sed -i "s/127.0.0.1/$LB_IP/g" $MY_PATH/k3s.yaml

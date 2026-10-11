@@ -165,6 +165,24 @@ resource "azurerm_lb_rule" "mongodb" {
   probe_id                       = azurerm_lb_probe.mongodb[each.key].id
 }
 
+resource "azurerm_lb_probe" "mongodb_metrics" {
+  loadbalancer_id = azurerm_lb.k3s_api_lb.id
+  name            = "mongodb-metrics"
+  protocol        = "Tcp"
+  port            = 10250
+}
+
+resource "azurerm_lb_rule" "mongodb_metrics" {
+  loadbalancer_id                = azurerm_lb.k3s_api_lb.id
+  name                           = "mongodb-metrics-10250"
+  protocol                       = "Tcp"
+  frontend_port                  = 10250
+  backend_port                   = 10250
+  frontend_ip_configuration_name = "k3s-api-frontend"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.k3s_api.id]
+  probe_id                       = azurerm_lb_probe.mongodb_metrics.id
+}
+
 resource "azurerm_network_interface" "nics" {
   count               = var.count_qty
   name                = "nic-${count.index}"
@@ -293,7 +311,7 @@ resource "azurerm_network_security_group" "k3s_nsg" {
     destination_address_prefix = "*"
   }
   security_rule {
-    name                       = "allow-k3s-metrics"
+    name                       = "allow-mongo-metrics"
     priority                   = 104
     direction                  = "Inbound"
     access                     = "Allow"
@@ -343,7 +361,7 @@ resource "null_resource" "get_kubeconfig" {
     api_lb_ip        = azurerm_public_ip.k3s_lb_ip.ip_address
   }
   provisioner "local-exec" {
-    command = "bash ${path.module}/scripts/get_kubectl.sh ${azurerm_linux_virtual_machine.vms[0].admin_username} ${azurerm_public_ip.public_ip[0].ip_address} ${path.module} ${azurerm_public_ip.k3s_lb_ip.ip_address}"
+    command = "bash ${path.module}/scripts/get_kubectl.sh ${azurerm_linux_virtual_machine.vms[0].admin_username} ${azurerm_public_ip.public_ip[0].ip_address} ${path.module} ${azurerm_public_ip.k3s_lb_ip.ip_address} ${local.private_key_file}"
   }
 }
 
@@ -363,8 +381,8 @@ resource "null_resource" "mongodb_credentials" {
 resource "null_resource" "set_mongodb_domain" {
   depends_on = [null_resource.get_kubeconfig]
   triggers = {
-    bootstrap_id = null_resource.bootstrap_master_app.id
-    hostname     = local.mongodb_advertised_host
+    kubeconfig_id = null_resource.get_kubeconfig.id
+    hostname      = local.mongodb_advertised_host
   }
   provisioner "local-exec" {
     command = "bash ${path.module}/scripts/set_mongodb_domain.sh ${path.module}/k3s.yaml ${local.mongodb_advertised_host}"
@@ -385,7 +403,7 @@ resource "null_resource" "install_argocd" {
 }
 
 resource "null_resource" "bootstrap_master_app" {
-  depends_on = [null_resource.install_argocd, null_resource.mongodb_credentials]
+  depends_on = [null_resource.install_argocd, null_resource.mongodb_credentials, null_resource.set_mongodb_domain]
   triggers = {
     argocd_id    = null_resource.install_argocd.id
     manifest_url = var.master_app_manifest_url
@@ -399,7 +417,7 @@ resource "null_resource" "bootstrap_master_app" {
 
 
 output "ssh_access" {
-  value = "Use the repos private key: ssh -i $local.public_key_file $var.admin_user@{public_ip_address}
+  value = "Use the repos private key: ssh -i ${local.public_key_file} ${var.admin_user}@{public_ip_address}"
 }
 
 output "vm_public_ips" {
@@ -426,7 +444,7 @@ output "argocd_access" {
 }
 
 output "mongodb_access" {
-  description = "Replica set connection endpoints. Terraform stores the hostname in the mongodb-external-access ConfigMap and the generated passwords in the mongodb-credentials Secret. The app's PreSync hook copies the hostname onto the Application before MongoDB is created."
+  description = "Replica set connection endpoints. Terraform stores the hostname in the mongodb-external-access ConfigMap before the master Application is applied. Each MongoDB pod reads that ConfigMap at start and advertises the load balancer address. The generated passwords are in the mongodb-credentials Secret."
   value = [
     "mongodb://appuser:<password>@${join(",", [for port in local.mongodb_node_ports : "${local.mongodb_advertised_host}:${port}"])}/mydatabase?replicaSet=rs0",
     "App password: kubectl -n default get secret mongodb-credentials -o jsonpath='{.data.mongodb-passwords}' | base64 -d; echo",
