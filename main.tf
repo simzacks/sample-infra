@@ -298,7 +298,7 @@ resource "azurerm_network_security_group" "k3s_nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_address_prefix      = "azurerm_subnet.subnet.address_prefixes[0]"
+    source_address_prefix      = azurerm_subnet.subnet.address_prefixes[0]
     source_port_range          = "*"
     destination_port_range     = "10250"
     destination_address_prefix = "*"
