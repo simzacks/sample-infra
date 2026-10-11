@@ -29,15 +29,14 @@
     - 80 - HTTP (nodejs app, and argocd)
       - In production, I would recommend only using TLS with port 443
     - 30017, 30018, 30019 - NodePort (mongodb)
-    - 10250 - Mongodb metrics
-  - Cost: $0.035 per hour (6 rules)
+  - Cost: $0.025 per hour (5 rules)
 
 - Security Groups - Inbound ports configured (all outbound allowed by default):
   - 22 TCP - SSH access to the world
   - 6443 TCP - K3s API access to the world
   - 80 TCP - HTTP access to the world
   - 30017-30019 TCP  - NodePort access (for planned used ports) to the world
-  - 10250 TCP - Mongodb metrics access to the world
+  - 10250 TCP - Mongodb metrics access to the internal network
   - 8472 UDP - Flannel VXLan (k8s CNI) access to the internal network
   - 2379-2380 - etcd access to the internal network
 

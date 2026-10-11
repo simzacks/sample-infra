@@ -165,24 +165,6 @@ resource "azurerm_lb_rule" "mongodb" {
   probe_id                       = azurerm_lb_probe.mongodb[each.key].id
 }
 
-resource "azurerm_lb_probe" "mongodb_metrics" {
-  loadbalancer_id = azurerm_lb.k3s_api_lb.id
-  name            = "mongodb-metrics"
-  protocol        = "Tcp"
-  port            = 10250
-}
-
-resource "azurerm_lb_rule" "mongodb_metrics" {
-  loadbalancer_id                = azurerm_lb.k3s_api_lb.id
-  name                           = "mongodb-metrics-10250"
-  protocol                       = "Tcp"
-  frontend_port                  = 10250
-  backend_port                   = 10250
-  frontend_ip_configuration_name = "k3s-api-frontend"
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.k3s_api.id]
-  probe_id                       = azurerm_lb_probe.mongodb_metrics.id
-}
-
 resource "azurerm_network_interface" "nics" {
   count               = var.count_qty
   name                = "nic-${count.index}"
@@ -316,7 +298,7 @@ resource "azurerm_network_security_group" "k3s_nsg" {
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_address_prefix      = "*"
+    source_address_prefix      = "azurerm_subnet.subnet.address_prefixes[0]"
     source_port_range          = "*"
     destination_port_range     = "10250"
     destination_address_prefix = "*"
@@ -456,6 +438,6 @@ output "mongodb_access" {
 output "app_access" {
   description = "How to reach the Node.js app (hostless Ingress; sslip.io name is for DNS only)"
   value = [
-    "http://${local.app_hostname}",
+    "http://${local.app_hostname}/my-app",
   ]
 }
